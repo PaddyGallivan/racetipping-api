@@ -7,7 +7,10 @@ binding = "DB"
 database_name = "racetipping-db"
 database_id = "42d14cda-3b37-46fe-8f2c-e6d1aea7d0c3"
 
-# Secrets (set via CF dashboard or wrangler secret put):
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Secrets (set via: wrangler secret put <NAME>)
 # STRIPE_SECRET_KEY
-# STRIPE_WEBHOOK_SECRET
+# STRIPE_WEBHOOK_SECRET  -- webhook: we_1TRwVfAm8bVflPN0HGamWbHQ
 # SUPER_PIN
