@@ -4,7 +4,6 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // fixed.js
 var __defProp2 = Object.defineProperty;
 var __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, "name", { value, configurable: true }), "__name");
-var SUPER_PIN = "1016";
 var CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -305,7 +304,7 @@ async function handleAPI(request, env, url, path, method) {
     } catch {
     }
   }
-  const superPin = request.headers.get("X-Admin-Pin") === SUPER_PIN;
+  const superPin = !!env.SUPER_PIN && request.headers.get("X-Admin-Pin") === env.SUPER_PIN;
   const bearerToken = request.headers.get("Authorization")?.replace("Bearer ", "") || "";
   const parts = path.split("/").filter(Boolean);
   if (path === "/api/signup" && method === "POST") {
@@ -326,7 +325,7 @@ async function handleAPI(request, env, url, path, method) {
     if (!org2) return err("Comp not found", 404);
     const { pin, email, password } = body;
     const settings = JSON.parse(org2.settings || "{}");
-    if (pin && (pin === SUPER_PIN || pin === settings.adminPin)) {
+    if (pin && ((env.SUPER_PIN && pin === env.SUPER_PIN) || pin === settings.adminPin)) {
       return json({ ok: true, token: await createSession(db, org2.id), org_name: org2.name });
     }
     if (email && password) {
@@ -697,6 +696,131 @@ async function handleAPI(request, env, url, path, method) {
 }
 __name(handleAPI, "handleAPI");
 __name2(handleAPI, "handleAPI");
+
+function termsHTML() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms & Conditions — Horse Race Tipping</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0f1923; color:#e8e8e8; font-family:-apple-system,sans-serif; min-height:100vh; padding:40px 20px; }
+  .wrap { max-width:720px; margin:0 auto; }
+  h1 { color:#c9a227; font-size:1.8rem; margin-bottom:8px; }
+  h2 { color:#c9a227; font-size:1.1rem; margin:28px 0 10px; }
+  p, li { color:#b0bec5; line-height:1.7; font-size:0.93rem; margin-bottom:10px; }
+  ul { padding-left:20px; }
+  a { color:#c9a227; }
+  .back { display:inline-block; margin-bottom:28px; color:#c9a227; text-decoration:none; font-size:0.9rem; }
+  .notice { background:#1e2d3d; border-left:4px solid #c9a227; padding:16px 20px; border-radius:0 8px 8px 0; margin:20px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/" class="back">← Back to horseracetipping.com</a>
+  <h1>Terms & Conditions</h1>
+  <p><em>Last updated: May 2026</em></p>
+
+  <div class="notice">
+    🔞 <strong>You must be 18 years or older to participate in any tipping competition on this platform.</strong>
+  </div>
+
+  <h2>1. About This Platform</h2>
+  <p>horseracetipping.com provides software tools that allow groups (pubs, clubs, families) to run private horse racing tipping competitions. We are a technology provider, not a gambling operator.</p>
+
+  <h2>2. Nature of Competitions</h2>
+  <p>Tipping competitions on this platform involve predicting the outcomes of horse races based on skill and knowledge. Entry fees, prize structures, and competition rules are set entirely by the individual organisers, not by horseracetipping.com.</p>
+
+  <h2>3. Organiser Responsibilities</h2>
+  <ul>
+    <li>Organisers are solely responsible for ensuring their competition complies with all applicable state and territory laws.</li>
+    <li>In NSW, tipping competitions may be classified as progressive lotteries under the <em>Community Gaming Act 2018</em>. A permit may be required if total prize value exceeds $30,000.</li>
+    <li>In VIC, tipping competitions are generally considered games of skill and may be exempt from permit requirements under the <em>Gambling Regulation Act 2003</em>.</li>
+    <li>Requirements vary in QLD, SA, WA, TAS, ACT, and NT. Organisers should seek independent legal advice if unsure.</li>
+    <li>Organisers must not allow persons under 18 to participate in competitions involving entry fees.</li>
+  </ul>
+
+  <h2>4. Our Role</h2>
+  <p>horseracetipping.com provides the platform only. We do not collect, hold, or distribute entry fees or prize money. All financial transactions between participants are the responsibility of the organiser.</p>
+
+  <h2>5. Race Data</h2>
+  <p>Race fields and results are sourced from publicly available data (including the TAB API). We do not guarantee accuracy or timeliness of race data.</p>
+
+  <h2>6. Limitation of Liability</h2>
+  <p>horseracetipping.com is provided "as is". We accept no liability for disputes between participants, incorrect race data, or regulatory non-compliance by organisers.</p>
+
+  <h2>7. Contact</h2>
+  <p>Questions? Email <a href="mailto:hello@horseracetipping.com">hello@horseracetipping.com</a></p>
+</div>
+</body>
+</html>`;
+}
+__name(termsHTML, "termsHTML");
+__name2(termsHTML, "termsHTML");
+
+function privacyHTML() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Horse Race Tipping</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0f1923; color:#e8e8e8; font-family:-apple-system,sans-serif; min-height:100vh; padding:40px 20px; }
+  .wrap { max-width:720px; margin:0 auto; }
+  h1 { color:#c9a227; font-size:1.8rem; margin-bottom:8px; }
+  h2 { color:#c9a227; font-size:1.1rem; margin:28px 0 10px; }
+  p, li { color:#b0bec5; line-height:1.7; font-size:0.93rem; margin-bottom:10px; }
+  ul { padding-left:20px; }
+  a { color:#c9a227; }
+  .back { display:inline-block; margin-bottom:28px; color:#c9a227; text-decoration:none; font-size:0.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/" class="back">← Back to horseracetipping.com</a>
+  <h1>Privacy Policy</h1>
+  <p><em>Last updated: May 2026</em></p>
+
+  <h2>1. What We Collect</h2>
+  <ul>
+    <li><strong>Organisers:</strong> Name, email address, password (hashed), organisation name.</li>
+    <li><strong>Participants (tippers):</strong> Name and optionally email address, as provided by the organiser or directly entered.</li>
+    <li><strong>Tips data:</strong> Horse selections submitted during competitions.</li>
+  </ul>
+
+  <h2>2. How We Use It</h2>
+  <ul>
+    <li>To operate the tipping competition platform.</li>
+    <li>To display leaderboards and results to competition participants.</li>
+    <li>We do not sell personal data to third parties.</li>
+    <li>We do not use personal data for advertising.</li>
+  </ul>
+
+  <h2>3. Data Storage</h2>
+  <p>Data is stored in Cloudflare D1 (SQLite) hosted on Cloudflare's global edge network. Cloudflare's infrastructure is subject to their own <a href="https://www.cloudflare.com/privacypolicy/" target="_blank">Privacy Policy</a>.</p>
+
+  <h2>4. Data Retention</h2>
+  <p>Competition data is retained for 12 months after the last race day associated with an organisation. Organisers may request deletion by emailing us.</p>
+
+  <h2>5. Your Rights</h2>
+  <p>Under Australian Privacy Principles (Privacy Act 1988), you have the right to access and correct personal information we hold about you. Contact us at <a href="mailto:hello@horseracetipping.com">hello@horseracetipping.com</a> to exercise these rights.</p>
+
+  <h2>6. Cookies & Analytics</h2>
+  <p>We use browser localStorage to store session tokens. We do not use third-party analytics or advertising cookies.</p>
+
+  <h2>7. Contact</h2>
+  <p>Privacy enquiries: <a href="mailto:hello@horseracetipping.com">hello@horseracetipping.com</a></p>
+</div>
+</body>
+</html>`;
+}
+__name(privacyHTML, "privacyHTML");
+__name2(privacyHTML, "privacyHTML");
+
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -714,6 +838,8 @@ var worker_default = {
     const parts = path.split("/").filter(Boolean);
     if (parts.length === 0) return html(landingHTML());
     if (parts[0] === "signup") return html(signupHTML());
+    if (parts[0] === "terms") return html(termsHTML());
+    if (parts[0] === "privacy") return html(privacyHTML());
     const slug = parts[0];
     const org = await getOrg(env.DB, slug);
     if (!org) return new Response("Comp not found \u2014 check the URL and try again.", { status: 404, headers: { "Content-Type": "text/plain" } });
@@ -762,7 +888,6 @@ function landingHTML() {
   <p>Run your pub's race day tipping comp in minutes. Punters scan a QR code, pick their horses, and watch the live leaderboard \u2014 no app needed.</p>
   <div class="btn-row">
     <a href="/signup" class="btn btn-gold">\u{1F37A} Set Up Your Pub's Comp</a>
-    <a href="/family" class="btn btn-ghost">Gallivan \u2192</a>
   </div>
 </div>
 
@@ -787,7 +912,15 @@ function landingHTML() {
 </div>
 
 <footer>
-  <p>Built by <a href="/family">Gallivan</a> &nbsp;|&nbsp; Powered by horseracetipping.com</p>
+  <p>
+    <a href="/terms">Terms & Conditions</a> &nbsp;|&nbsp;
+    <a href="/privacy">Privacy Policy</a> &nbsp;|&nbsp;
+    &copy; 2026 horseracetipping.com
+  </p>
+  <p style="margin-top:8px;font-size:0.75rem;color:#6a7d94">
+    🔞 18+ only. This platform facilitates private tipping competitions between participants.<br>
+    Permit requirements vary by state. Organisers are responsible for compliance with local gaming laws.
+  </p>
 </footer>
 </body>
 </html>`;
