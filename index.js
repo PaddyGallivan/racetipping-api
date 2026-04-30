@@ -998,6 +998,7 @@ async function doSignup() {
   const paymentDetails=document.getElementById('paymentDetails').value.trim();
   const msg=document.getElementById('msg');
   if (!name||!slug||!email||!password){showMsg('All fields required','err');return;}
+  if (!document.getElementById('agreeTerms').checked){showMsg('Please confirm you are 18+ and agree to the Terms & Conditions','err');return;}
   const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,slug,admin_email:email,admin_password:password,settings:{entryFee,prize,paymentDetails,tagline:name+' Race Day Tipping'}})}).then(r=>r.json()).catch(()=>null);
   if (!r){showMsg('Request failed','err');return;}
   if (r.error){showMsg(r.error,'err');return;}
@@ -1134,6 +1135,7 @@ function orgHTML(org, settings) {
 
 <!-- TIPS -->
 <div id="tab-tips" class="container" style="display:none">
+  <div style="background:#1a2e1a;border:1px solid #2a5a2a;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.82rem;color:#8fbc8f">\u{1F512} By entering tips you confirm you are 18+ and agree to the <a href="/terms" target="_blank" style="color:#c9a227">Terms &amp; Conditions</a>.</div>
   <div class="card" id="tipRegCard">
     <h2>\u270F\uFE0F Enter Your Tips</h2>
     <div id="tipMsg"></div>
@@ -1932,6 +1934,10 @@ function showMsg(elId,msg,type){const el=document.getElementById(elId);el.innerH
 
 loadRaceDay();
 <\/script>
+<footer style="text-align:center;padding:20px 16px;color:#4a5e72;font-size:0.75rem;border-top:1px solid #1a2e40;margin-top:32px">
+  <p>🔒 18+ only. Tipping competitions involve financial risk. Please gamble responsibly.</p>
+  <p style="margin-top:6px"><a href="/terms" style="color:#c9a227;text-decoration:none">Terms & Conditions</a> &nbsp;&middot;&nbsp; <a href="/privacy" style="color:#c9a227;text-decoration:none">Privacy Policy</a> &nbsp;&middot;&nbsp; <a href="/" style="color:#4a5e72;text-decoration:none">horseracetipping.com</a></p>
+</footer>
 </body>
 </html>`;
 }
