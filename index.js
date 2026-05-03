@@ -73,7 +73,7 @@ __name(createSession, "createSession");
 __name2(createSession, "createSession");
 async function validateSession(db, token, orgId) {
   if (!token) return false;
-  const s = await db.prepare(`SELECT id FROM org_sessions WHERE token=? AND org_id=? AND expires_at>datetime('now')`).bind(token, orgId).first();
+  const s = await db.prepare(`SELECT token FROM org_sessions WHERE token=? AND org_id=? AND expires_at>datetime('now')`).bind(token, orgId).first();
   return !!s;
 }
 __name(validateSession, "validateSession");
@@ -133,6 +133,44 @@ async function stripe(env, method, path, body) {
 }
 __name(stripe, "stripe");
 __name2(stripe, "stripe");
+
+async function sendEmail(env, to, subject, html) {
+  if (!env.RESEND_API_KEY || !to) return;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "Horse Race Tipping <hello@luckdragon.io>", to: [to], subject, html })
+    });
+  } catch {}
+}
+__name(sendEmail, "sendEmail");
+__name2(sendEmail, "sendEmail");
+
+async function notifyResultsEntered(db, env, org, raceId) {
+  try {
+    const race = await db.prepare(`SELECT r.race_number, v.track_name, v.code FROM races r JOIN venues v ON r.venue_id=v.id WHERE r.id=?`).bind(raceId).first();
+    if (!race) return;
+    const rd = await db.prepare(`SELECT * FROM race_days WHERE is_active=1 AND org_id=? LIMIT 1`).bind(org.id).first();
+    if (!rd) return;
+    const tippers = (await db.prepare(`SELECT DISTINCT t.name, t.email FROM tippers t JOIN tips tip ON t.id=tip.tipper_id JOIN races r ON tip.race_id=r.id WHERE r.venue_id=(SELECT venue_id FROM races WHERE id=?) AND t.email IS NOT NULL AND t.org_id=?`).bind(raceId, org.id).all()).results;
+    const lbUrl = `https://horseracetipping.com/${org.slug}`;
+    for (const tipper of tippers) {
+      if (!tipper.email) continue;
+      await sendEmail(env, tipper.email,
+        `Result entered: ${race.track_name} Race ${race.race_number} — ${org.name}`,
+        `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#0f1923;color:#e8e8e8;padding:32px;border-radius:12px">
+          <h2 style="color:#c9a227;margin:0 0 16px">🏇 Result In — ${race.track_name} R${race.race_number}</h2>
+          <p style="color:#b0bec5;margin:0 0 24px">Hi ${tipper.name}, a result has been entered for <strong>${race.track_name} Race ${race.race_number}</strong> in the ${org.name} tipping competition.</p>
+          <a href="${lbUrl}" style="display:inline-block;background:#c9a227;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">View Leaderboard →</a>
+          <p style="color:#4a5e72;font-size:0.8rem;margin-top:24px">18+ only. <a href="https://horseracetipping.com/terms" style="color:#4a5e72">Terms</a></p>
+        </div>`
+      );
+    }
+  } catch {}
+}
+__name(notifyResultsEntered, "notifyResultsEntered");
+__name2(notifyResultsEntered, "notifyResultsEntered");
 async function verifyStripeSignature(payload, sigHeader, secret) {
   if (!sigHeader) return false;
   const tsPart = sigHeader.split(",").find((p) => p.startsWith("t="));
@@ -158,9 +196,24 @@ async function doScrapeResultsForRD(env, rdRow) {
   const TAB = "https://api.beta.tab.com.au/v1/tab-info-service/racing";
   let meetings;
   try {
-    const r = await fetch(`${TAB}/dates/${rdRow.date}/meetings?jurisdiction=NSW`, { headers: { Accept: "application/json" } });
-    if (!r.ok) return { error: r.status };
-    meetings = ((await r.json()).meetings || []).filter((m) => m.raceType === "R");
+    // Try multiple jurisdictions and merge - TAB blocks direct CF fetches sometimes
+    const jurisList = ["NSW", "VIC", "QLD", "SA", "WA"];
+    const allMeetings = [];
+    for (const jur of jurisList) {
+      try {
+        const r = await fetch(`${TAB}/dates/${rdRow.date}/meetings?jurisdiction=${jur}`, { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" } });
+        if (!r.ok) continue;
+        const text = await r.text();
+        if (!text.startsWith("{") && !text.startsWith("[")) continue; // skip HTML responses
+        const parsed = JSON.parse(text);
+        const rMeetings = (parsed.meetings || []).filter((m) => m.raceType === "R");
+        for (const m of rMeetings) {
+          if (!allMeetings.find((x) => x.meetingName === m.meetingName)) allMeetings.push(m);
+        }
+      } catch {}
+    }
+    meetings = allMeetings;
+    if (!meetings.length) return { error: "No meetings found from TAB API" };
   } catch (e) {
     return { error: e.message };
   }
@@ -233,9 +286,24 @@ async function doScrapeFields(env, orgId) {
   const TAB = "https://api.beta.tab.com.au/v1/tab-info-service/racing";
   let meetings;
   try {
-    const r = await fetch(`${TAB}/dates/${rdRow.date}/meetings?jurisdiction=NSW`, { headers: { Accept: "application/json" } });
-    if (!r.ok) return { error: r.status };
-    meetings = ((await r.json()).meetings || []).filter((m) => m.raceType === "R");
+    // Try multiple jurisdictions and merge - TAB blocks direct CF fetches sometimes
+    const jurisList = ["NSW", "VIC", "QLD", "SA", "WA"];
+    const allMeetings = [];
+    for (const jur of jurisList) {
+      try {
+        const r = await fetch(`${TAB}/dates/${rdRow.date}/meetings?jurisdiction=${jur}`, { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" } });
+        if (!r.ok) continue;
+        const text = await r.text();
+        if (!text.startsWith("{") && !text.startsWith("[")) continue; // skip HTML responses
+        const parsed = JSON.parse(text);
+        const rMeetings = (parsed.meetings || []).filter((m) => m.raceType === "R");
+        for (const m of rMeetings) {
+          if (!allMeetings.find((x) => x.meetingName === m.meetingName)) allMeetings.push(m);
+        }
+      } catch {}
+    }
+    meetings = allMeetings;
+    if (!meetings.length) return { error: "No meetings found from TAB API" };
   } catch (e) {
     return { error: e.message };
   }
@@ -262,12 +330,14 @@ async function doScrapeFields(env, orgId) {
       if (!race) continue;
       let rd;
       try {
-        const r2 = await fetch(`${TAB}/dates/${rdRow.date}/meetings/R/${enc}/races/${rn}?jurisdiction=NSW&fixedOdds=true`, { headers: { Accept: "application/json" } });
+        const r2 = await fetch(`${TAB}/dates/${rdRow.date}/meetings/R/${enc}/races/${rn}?jurisdiction=${mtg.location || "NSW"}&fixedOdds=true`, { headers: { Accept: "application/json" } });
         if (!r2.ok) {
           skip++;
           continue;
         }
-        rd = await r2.json();
+        const t2 = await r2.text();
+        if (!t2.startsWith("{") && !t2.startsWith("[")) { skip++; continue; }
+        rd = JSON.parse(t2);
       } catch (e) {
         skip++;
         continue;
@@ -435,10 +505,10 @@ async function handleAPI(request, env, url, path, method) {
   if (sub === "/tippers" && method === "GET") {
     const rdId = url.searchParams.get("race_day_id");
     if (rdId) {
-      const rows2 = await db.prepare(`SELECT DISTINCT t.*, v.code as venue_code, p.paid FROM tippers t JOIN tips tip ON t.id=tip.tipper_id JOIN races r ON tip.race_id=r.id JOIN venues v ON r.venue_id=v.id LEFT JOIN payments p ON t.id=p.tipper_id AND p.race_day_id=? AND p.venue_code=v.code WHERE t.org_id=? AND v.race_day_id=? ORDER BY t.name`).bind(rdId, org.id, rdId).all();
+      const rows2 = await db.prepare(`SELECT DISTINCT t.id, t.name, t.email, t.motto, t.created_at, t.org_id, v.code as venue_code, p.paid FROM tippers t JOIN tips tip ON t.id=tip.tipper_id JOIN races r ON tip.race_id=r.id JOIN venues v ON r.venue_id=v.id LEFT JOIN payments p ON t.id=p.tipper_id AND p.race_day_id=? AND p.venue_code=v.code WHERE t.org_id=? AND v.race_day_id=? ORDER BY t.name`).bind(rdId, org.id, rdId).all();
       return json(rows2.results);
     }
-    const rows = await db.prepare(`SELECT * FROM tippers WHERE org_id=? ORDER BY name`).bind(org.id).all();
+    const rows = await db.prepare(`SELECT id, name, email, motto, created_at, org_id FROM tippers WHERE org_id=? ORDER BY name`).bind(org.id).all();
     return json(rows.results);
   }
   if (sub === "/tippers" && method === "POST") {
@@ -503,6 +573,7 @@ async function handleAPI(request, env, url, path, method) {
     const { race_id, pos1_barrier, pos1_win_odds, pos1_place_odds, pos2_barrier, pos2_place_odds, pos3_barrier, pos3_place_odds, pos4_barrier } = body;
     if (!race_id || !pos1_barrier) return err("race_id and pos1_barrier required");
     await db.prepare(`INSERT OR REPLACE INTO race_results (race_id,pos1_barrier,pos1_win_odds,pos1_place_odds,pos2_barrier,pos2_place_odds,pos3_barrier,pos3_place_odds,pos4_barrier) VALUES (?,?,?,?,?,?,?,?,?)`).bind(race_id, pos1_barrier, pos1_win_odds || null, pos1_place_odds || null, pos2_barrier || null, pos2_place_odds || null, pos3_barrier || null, pos3_place_odds || null, pos4_barrier || null).run();
+    await notifyResultsEntered(db, env, org, race_id);
     return json({ ok: true });
   }
   if (sub.match(/^\/leaderboard\/[A-Z]+$/) && method === "GET") {
@@ -607,6 +678,13 @@ async function handleAPI(request, env, url, path, method) {
     const ph = await hashPassword(password);
     const res = await db.prepare(`INSERT INTO tippers (name,email,motto,password_hash,org_id) VALUES (?,?,?,?,?)`).bind(name, email, motto || null, ph, org.id).run();
     const token = await createTipperSession(db, res.meta.last_row_id, org.id);
+    const welcomeHtml = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#0f1923;color:#e8e8e8;padding:32px;border-radius:12px">
+      <h2 style="color:#c9a227;margin:0 0 16px">🏇 Welcome to ${org.name}!</h2>
+      <p style="color:#b0bec5;margin:0 0 8px">Hi ${name}, you're in! You can now pick your horses and submit your tips.</p>
+      <a href="https://horseracetipping.com/${org.slug}" style="display:inline-block;background:#c9a227;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin-top:16px">Pick Your Horses →</a>
+      <p style="color:#4a5e72;font-size:0.8rem;margin-top:24px">18+ only. <a href="https://horseracetipping.com/terms" style="color:#4a5e72">Terms</a></p>
+    </div>`;
+    await sendEmail(env, email, `Welcome to ${org.name} — Horse Race Tipping`, welcomeHtml);
     return json({ ok: true, token, tipper: { id: res.meta.last_row_id, name, email, motto: motto || null } });
   }
   if (sub === "/punter/login" && method === "POST") {
@@ -751,8 +829,14 @@ function termsHTML() {
   <h2>6. Limitation of Liability</h2>
   <p>horseracetipping.com is provided "as is". We accept no liability for disputes between participants, incorrect race data, or regulatory non-compliance by organisers.</p>
 
-  <h2>7. Contact</h2>
-  <p>Questions? Email <a href="mailto:hello@horseracetipping.com">hello@horseracetipping.com</a></p>
+  <h2>7. Subscription &amp; Cancellation</h2>
+  <p>Access to horseracetipping.com for organisers is provided on a month-to-month subscription at AUD $20/month (inc. GST). You may cancel at any time from your admin panel or by emailing us — cancellation takes effect at the end of the current billing period, with no refunds for partial months. We reserve the right to change pricing with 30 days notice.</p>
+
+  <h2>8. About Us</h2>
+  <p>horseracetipping.com is operated by Luck Dragon Pty Ltd. Enquiries: <a href="mailto:paddy@luckdragon.io">paddy@luckdragon.io</a>.</p>
+
+  <h2>9. Contact</h2>
+  <p>Questions? Email <a href="mailto:paddy@luckdragon.io">paddy@luckdragon.io</a></p>
 </div>
 </body>
 </html>`;
@@ -807,13 +891,13 @@ function privacyHTML() {
   <p>Competition data is retained for 12 months after the last race day associated with an organisation. Organisers may request deletion by emailing us.</p>
 
   <h2>5. Your Rights</h2>
-  <p>Under Australian Privacy Principles (Privacy Act 1988), you have the right to access and correct personal information we hold about you. Contact us at <a href="mailto:hello@horseracetipping.com">hello@horseracetipping.com</a> to exercise these rights.</p>
+  <p>Under Australian Privacy Principles (Privacy Act 1988), you have the right to access and correct personal information we hold about you. Contact us at <a href="mailto:paddy@luckdragon.io">paddy@luckdragon.io</a> to exercise these rights.</p>
 
   <h2>6. Cookies & Analytics</h2>
   <p>We use browser localStorage to store session tokens. We do not use third-party analytics or advertising cookies.</p>
 
   <h2>7. Contact</h2>
-  <p>Privacy enquiries: <a href="mailto:hello@horseracetipping.com">hello@horseracetipping.com</a></p>
+  <p>Privacy enquiries: <a href="mailto:paddy@luckdragon.io">paddy@luckdragon.io</a></p>
 </div>
 </body>
 </html>`;
@@ -1935,7 +2019,7 @@ function showMsg(elId,msg,type){const el=document.getElementById(elId);el.innerH
 loadRaceDay();
 <\/script>
 <footer style="text-align:center;padding:20px 16px;color:#4a5e72;font-size:0.75rem;border-top:1px solid #1a2e40;margin-top:32px">
-  <p>🔒 18+ only. Tipping competitions involve financial risk. Please gamble responsibly.</p>
+  <p>18+ only. This platform facilitates private skill-based tipping competitions. Entry fees and prize structures are set by the organiser.</p>
   <p style="margin-top:6px"><a href="/terms" style="color:#c9a227;text-decoration:none">Terms & Conditions</a> &nbsp;&middot;&nbsp; <a href="/privacy" style="color:#c9a227;text-decoration:none">Privacy Policy</a> &nbsp;&middot;&nbsp; <a href="/" style="color:#4a5e72;text-decoration:none">horseracetipping.com</a></p>
 </footer>
 </body>
